@@ -104,7 +104,7 @@ impl PWM {
         Ok(true)
     }
 
-    pub fn load<'a>(path: &str) -> Result<Self, &str> {
+    pub fn load(path: &str) -> Result<Self, &str> {
         let file = match File::open(path) {
             Err(_) => return Err("Error reading pwm file"),
             Ok(data) => data,
@@ -144,6 +144,9 @@ impl PWM {
 
         for i in self.len()..sequence.len() {
             if let None = sequence.contains_startcodon_at(i) {
+                if i == tis_position {
+                    panic!("SHOULDNT HAPPEN! {:?}", sequence)
+                }
                 continue;
             }
             let start = (i - self.len()) as i32 + self.offset;
@@ -220,7 +223,7 @@ impl PWM {
             return Err("Positive and negative count must be greater than 0.");
         }
         label_score_pairs
-            .sort_by(|(_, score_fst), (_, score_snd)| score_fst.partial_cmp(score_snd).unwrap());
+            .sort_by(|(_, score_fst), (_, score_snd)| score_snd.partial_cmp(score_fst).unwrap());
         let mut false_positive = 0;
         let mut true_positive = 0;
         let mut score_prev = f64::NEG_INFINITY;
@@ -238,11 +241,12 @@ impl PWM {
             } else {
                 false_positive += 1;
             }
-            roc_points.push((
-                false_positive as f64 / negative_count as f64,
-                true_positive as f64 / positive_count as f64,
-            ));
         }
+        roc_points.push((
+            false_positive as f64 / negative_count as f64,
+            true_positive as f64 / positive_count as f64,
+        ));
+        println!("{:?}\n{:?}\n{:?}", true_positive, positive_count, 0);
         Ok(roc_points)
     }
 }

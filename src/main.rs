@@ -1,7 +1,13 @@
 extern crate clap;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
+extern crate serde_json;
+
 use std::*;
+use std::path::Path;
+use std::io::prelude::*;
+use std::fs::File;
+use std::fmt::Display;
 
 extern crate bio_algos;
 use bio_algos::{analysis::PWM, *};
@@ -62,6 +68,13 @@ fn main() {
                         .required(true)
                         .takes_value(true)
                         .value_name("PATH"),
+                ).arg(
+                    Arg::with_name("output")
+                        .help("Where to store the roc data")
+                        .short("o")
+                        .long("output")
+                        .takes_value(true)
+                        .value_name("PATH"),
                 ),
         ).get_matches();
 
@@ -71,6 +84,10 @@ fn main() {
         exec_calc_pwm(matches);
     } else if let Some(matches) = matches.subcommand_matches("calc_threshold") {
         exec_calc_threshold(matches);
+    } else if let Some(matches) = matches.subcommand_matches("calc_roc") {
+        if let Err(err) = exec_calc_roc(matches) {
+            print_and_exit(err);
+        }
     }
 }
 
@@ -123,4 +140,45 @@ fn exec_calc_threshold(matches: &ArgMatches) {
         achieved_sensitivity, threshold
     );
     println!("{:?}", eval);
+}
+
+fn exec_calc_roc<'a>(matches: &'a ArgMatches) -> Result<bool, &'a str> {
+    let input = matches.value_of("INPUT").unwrap();
+    let sequences = util::read_sequences_or_exit(input);
+    let tis_position = 100;
+    let pwm_path = match matches.value_of("pwm") {
+        Some(path) => path,
+        _ => process::exit(1)
+    };
+    let pwm = PWM::load(pwm_path)?;
+    let roc = match pwm.calc_roc(&sequences, tis_position) {
+        Ok(roc) => roc,
+        Err(_) => return Err("Error calculating roc")
+    };
+    match matches.value_of("output") {
+        Some(path) => {
+            let path = Path::new(path);
+            let mut file = match File::create(path) {
+                Ok(file) => file,
+                _ => return Err("Error opening file.")
+            };
+            let json = match serde_json::to_string(&roc) {
+                Ok(json) => json,
+                _ => return Err("Error converting roc data to json.")
+            };
+            if let Err(_) = file.write_all(json.as_bytes()) {
+                return Err("Unable to write json data.")
+            }
+        },
+        None => {
+            println!("ROC:\n{:?}", roc)
+        }
+    };
+    Ok(true)
+}
+
+
+fn print_and_exit<T: Display>(err: T) -> ! {
+    eprintln!("Aborting!\n{}", err);
+    process::exit(1);
 }

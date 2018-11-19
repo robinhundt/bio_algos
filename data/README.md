@@ -1,0 +1,1 @@
+There is some faulty data in sequence 304 at position 101. ATT is not a possible start codon.
