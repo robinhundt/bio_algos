@@ -97,11 +97,11 @@ impl PWM {
         self.matrix.shape()[1]
     }
 
-    pub fn store(&self, path: &str) -> io::Result<bool> {
+    pub fn store(&self, path: &str) -> io::Result<()> {
         let path = Path::new(path);
         let mut file = File::create(path)?;
         file.write_all(serde_json::to_string(self)?.as_bytes())?;
-        Ok(true)
+        Ok(())
     }
 
     pub fn load(path: &str) -> Result<Self, &str> {
@@ -209,7 +209,6 @@ impl PWM {
             })
     }
 
-
     /// Algorithm adapted from http://www.cs.ru.nl/~tomh/onderwijs/dm/dm_files/ROC101.pdf
     pub fn calc_roc(
         &self,
@@ -246,9 +245,40 @@ impl PWM {
             false_positive as f64 / negative_count as f64,
             true_positive as f64 / positive_count as f64,
         ));
-        println!("{:?}\n{:?}\n{:?}", true_positive, positive_count, 0);
         Ok(roc_points)
     }
+}
+
+pub fn calc_auc(roc_points: &Vec<(f64, f64)>) -> f64 {
+    roc_points
+        .into_iter()
+        .zip(roc_points[1..].into_iter())
+        .fold(0., |acc, ((x1, y1), (x2, y2))| {
+            acc + trapezoid_area(*y1, *y2, (x1 - x2).abs())
+        })
+}
+
+pub fn calc_background_model(
+    sequences: &Vec<Sequence>,
+    tis_position: usize,
+    window_size: usize,
+) -> [f64; 4] {
+    let mut bg_model = [0.; 4];
+    for seq in sequences {
+        for i in window_size..seq.len() {
+            if seq.contains_startcodon_at(i).is_none() || i == tis_position {
+                continue;
+            }
+            for base in seq[i - window_size..i].into_iter() {
+                bg_model[*base as usize] += 1.;
+            }
+        }
+    }
+    let sum_occurences: f64 = bg_model.iter().sum();
+    bg_model
+        .iter_mut()
+        .for_each(|count| *count /= sum_occurences);
+    bg_model
 }
 
 pub fn calc_score_threshold_for_sensitivity(
@@ -265,40 +295,25 @@ pub fn calc_score_threshold_for_sensitivity(
         panic!("max_iterations must be bigger than 0")
     }
 
-    let mut low_score_bound = 0.;
-    let mut high_score_bound = 0.;
-
-    for column in pwm.matrix.gencolumns() {
-        if let Some((min, max)) = min_max(column.iter()) {
-            low_score_bound += min;
-            high_score_bound += max;
-        }
-    }
-
-    if low_score_bound == high_score_bound {
-        panic!("Error calculating score bounds, low == high. Possibly the pwm is empty.")
-    }
-
-    let mut threshold = (high_score_bound - low_score_bound) / 2.;
-    let mut curr_sensitivity = 0.;
+    let mut label_score_pairs = pwm.score_label_sequences(sequences, tis_position);
+    label_score_pairs
+        .sort_by(|(_, score_fst), (_, score_snd)| score_snd.partial_cmp(score_fst).unwrap());
     let mut eval = Evaluation::default();
-    for i in 0..max_iterations {
-        println!("step {} of {}", i, max_iterations);
-        // TODO instead of always recalculating the scores,
-        // they should be cached and compared against the new threshold
-        eval = pwm.eval_sequences(sequences, threshold, tis_position);
-        curr_sensitivity = eval.true_positive as f64 / sequences.len() as f64;
-        if curr_sensitivity == sensitivity {
-            break;
-        } else if curr_sensitivity > sensitivity {
-            low_score_bound = threshold;
-            threshold += (high_score_bound - low_score_bound) / 2.;
+    let mut threshold = 0.;
+    let mut achieved_sensitivity = 0.;
+    for (label, score) in label_score_pairs {
+        threshold = score;
+        if label {
+            eval.true_positive += 1;
         } else {
-            high_score_bound = threshold;
-            threshold -= (high_score_bound - low_score_bound) / 2.;
+            eval.false_positive += 1;
+        }
+        achieved_sensitivity = eval.true_positive as f64 / sequences.len() as f64;
+        if achieved_sensitivity >= sensitivity {
+            break;
         }
     }
-    (threshold, curr_sensitivity, eval)
+    (threshold, achieved_sensitivity, eval)
 }
 
 pub fn count_startcodon_variants(sequences: &Vec<Sequence>) -> HashMap<Startcodon, u32> {
@@ -307,19 +322,54 @@ pub fn count_startcodon_variants(sequences: &Vec<Sequence>) -> HashMap<Startcodo
     })
 }
 
-fn min_max<T>(mut it: T) -> Option<(T::Item, T::Item)>
-where
-    T: Iterator,
-    T::Item: PartialOrd + Copy,
-{
-    let head = it.next()?;
-    let (mut min, mut max) = (head, head);
-    for el in it {
-        if el < min {
-            min = el;
-        } else if el > max {
-            max = el;
-        }
+fn trapezoid_area(base1: f64, base2: f64, height: f64) -> f64 {
+    height * (base1 + base2) / 2.
+}
+
+#[cfg(test)]
+mod tests {
+    use self::Base::*;
+    use super::*;
+    #[test]
+    fn auc_calculates_zero() {
+        let roc = vec![(0., 0.), (1., 0.), (1., 1.)];
+        let auc = calc_auc(&roc);
+        assert_eq!(auc, 0.);
     }
-    Some((min, max))
+    #[test]
+    fn auc_calculates_one() {
+        let roc = vec![(0., 0.), (0., 1.), (1., 1.)];
+        let auc = calc_auc(&roc);
+        assert_eq!(auc, 1.);
+    }
+    #[test]
+    fn auc_calculates_0_5() {
+        let roc = vec![(0., 0.), (1., 1.)];
+        let auc = calc_auc(&roc);
+        assert_eq!(auc, 0.5);
+    }
+    #[test]
+    fn auc_calculates_0_625() {
+        let roc = vec![
+            (0., 0.),
+            (0., 0.25),
+            (0.25, 0.25),
+            (0.5, 0.5),
+            (0.5, 0.75),
+            (0.75, 1.),
+            (1., 1.),
+        ];
+        let auc = calc_auc(&roc);
+        assert_eq!(auc, 0.625);
+    }
+
+    #[test]
+    fn calc_background_model_uniform() {
+        let seqs = vec![
+            vec![A, C, G, T, A, T, G, A, A, G, T, G],
+            vec![A, C, G, T, A, T, G, A, A, G, T, G],
+        ];
+        let bg_model = calc_background_model(&seqs, 9, 4);
+        assert_eq!(bg_model, [0.25; 4]);
+    }
 }
