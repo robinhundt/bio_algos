@@ -1,6 +1,13 @@
 stages:
+  - test
   - build
   - docs
+
+run_tests:
+  image: rustlang/rust:nightly
+  stage: test
+  script:
+    - cargo test
 
 build_release:
   image: rustlang/rust:nightly
