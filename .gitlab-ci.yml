@@ -1,6 +1,7 @@
 stages:
   - test
   - build
+  - assignment
   - docs
 
 run_tests:
@@ -19,6 +20,20 @@ build_release:
       - target/release/bio_algos
     expire_in: 1yr
 
+build_assignment:
+  image: jupyter/datascience-notebook
+  stage: assignment
+  script:
+    - cp target/release/bio_algos pwm-assignment
+    - cd pwm-assignment 
+    - jupyter nbconvert --ExecutePreprocessor.kernel_name=python3 --output=protocol --execute pwm-assignment.ipynb 
+    - cd ..
+    - tar -czvf hundt_robin.tar.gz *
+  artifacts:
+    paths:
+      - hundt_robin.tar.gz
+    expire_in: 1yr
+
 pages:
   image: rustlang/rust:nightly
   stage: docs
@@ -29,5 +44,6 @@ pages:
   artifacts:
     paths:
     - public
+    expire_in: 1yr
   only:
   - master

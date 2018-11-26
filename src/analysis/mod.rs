@@ -1,7 +1,7 @@
 //! This module contains contains methods and a position weight matrix
-//! implementation useful for detecting translataion initiation sites
+//! implementation useful for detecting translataion initiation sites.  
 extern crate ndarray;
-use ndarray::{Array2, Zip};
+use ndarray::{Array2};
 
 extern crate serde_json;
 
@@ -11,12 +11,12 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::f64;
+use std::fmt;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 use std::ops::{Add, AddAssign};
 use std::path::Path;
-use std::fmt;
 
 use super::{Base, Sequence, SequenceExt, Startcodon};
 
@@ -26,14 +26,16 @@ pub struct Evaluation {
     false_positive: usize,
     true_positive: usize,
     negative_count: usize,
-    positive_count: usize
+    positive_count: usize,
 }
 
 impl Evaluation {
+    /// Returns the true positive rate for the Evaluation.
     pub fn tpr(&self) -> f64 {
         self.true_positive as f64 / self.positive_count as f64
     }
 
+    /// Returns the false positive rate for the Evaluation.
     pub fn fpr(&self) -> f64 {
         self.false_positive as f64 / self.negative_count as f64
     }
@@ -41,7 +43,14 @@ impl Evaluation {
 
 impl fmt::Display for Evaluation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"FP: {}, TP: {}, FPR: {}, TPR: {}", self.false_positive, self.true_positive, self.fpr(), self.tpr())
+        write!(
+            f,
+            "FP: {}, TP: {}, FPR: {}, TPR: {}",
+            self.false_positive,
+            self.true_positive,
+            self.fpr(),
+            self.tpr()
+        )
     }
 }
 
@@ -122,8 +131,9 @@ impl PWM {
         matrix /= sequences.len() as f64 + 4. * pseudocount;
 
         for (row_index, row) in matrix.genrows_mut().into_iter().enumerate() {
-            // maybe use map_inplace here
-            Zip::from(row).apply(|el| *el = el.log2() - background_distribution[row_index].log2())
+            for el in row {
+                *el = el.log2() - background_distribution[row_index].log2()
+            }
         }
 
         PWM {
@@ -134,10 +144,12 @@ impl PWM {
         }
     }
 
+    /// Returns the length of the PWM.
     pub fn len(&self) -> usize {
         self.matrix.shape()[1]
     }
 
+    /// Stores the PWM as json at the specified path.
     pub fn store(&self, path: &str) -> io::Result<()> {
         let path = Path::new(path);
         let mut file = File::create(path)?;
@@ -145,6 +157,7 @@ impl PWM {
         Ok(())
     }
 
+    /// Loads a json serialized PWM from the specified path. 
     pub fn load(path: &str) -> Result<Self, &str> {
         let file = match File::open(path) {
             Err(_) => return Err("Error reading pwm file"),
@@ -157,13 +170,9 @@ impl PWM {
         }
     }
 
+    /// Calculates a score for the specied sequence slice
     pub fn score(&self, sequence_slice: &[Base]) -> Result<f64, &str> {
         if sequence_slice.len() != self.len() {
-            eprintln!(
-                "pwm len: {}, slice len: {}",
-                self.len(),
-                sequence_slice.len()
-            );
             return Err("sequence_slice must be same length as pwm matrix");
         }
 
@@ -176,6 +185,9 @@ impl PWM {
         Ok(score)
     }
 
+    /// Returns a Vector of tuples where the first element designates
+    /// the true label of a potential TIS and the second element the 
+    /// score of this site. 
     pub fn score_label_sequence(
         &self,
         sequence: &Sequence,
@@ -186,7 +198,10 @@ impl PWM {
         for i in self.len()..sequence.len() {
             if let None = sequence.contains_startcodon_at(i) {
                 if i == tis_position {
-                    panic!("SHOULDNT HAPPEN! {:?}", sequence)
+                    panic!(
+                        "Invalid input data! Sequence does not contain startcodon at {}\n {:?}",
+                        tis_position, sequence
+                    )
                 }
                 continue;
             }
@@ -203,6 +218,9 @@ impl PWM {
         scores
     }
 
+    /// Returns a Vector of tuples where the first element designates
+    /// the true label of a potential TIS and the second element the 
+    /// score of this site. 
     pub fn score_label_sequences(
         &self,
         sequences: &Vec<Sequence>,
@@ -214,6 +232,10 @@ impl PWM {
         })
     }
 
+    /// Evaluates a single sequence. The returned Evaluation contains
+    /// the true positive count, the false positive count, as well as
+    /// the total number of actual and false TIS candidates.  
+    /// It also offers methods to calculate the TPR and FPR.
     pub fn eval_sequence(
         &self,
         sequence: &Sequence,
@@ -238,6 +260,10 @@ impl PWM {
             })
     }
 
+    /// Evaluates a multiple sequences. The returned Evaluation contains
+    /// the true positive count, the false positive count, as well as
+    /// the total number of actual and false TIS candidates.  
+    /// It also offers methods to calculate the TPR and FPR.
     pub fn eval_sequences(
         &self,
         sequences: &Vec<Sequence>,
@@ -252,18 +278,26 @@ impl PWM {
             })
     }
 
-    /// Algorithm adapted from http://www.cs.ru.nl/~tomh/onderwijs/dm/dm_files/ROC101.pdf
+    /// This is method is used to calculate the points for a receiver operator curve (ROC).
+    /// The Vector contained in the Result holds tuples where the first element is the
+    /// x and the second element the z value of the respecive ROC point.
+    /// 
+    /// Algorithm adapted from http://www.cs.ru.nl/~tomh/onderwijs/dm/dm_files/ROC101.pdf .
     pub fn calc_roc(
         &self,
         sequences: &Vec<Sequence>,
         tis_position: usize,
     ) -> Result<Vec<(f64, f64)>, &str> {
+        // Calculate a vector that contains a (true label, score) tuple for every
+        // possible TIS in the given sequences.
         let mut label_score_pairs = self.score_label_sequences(sequences, tis_position);
+        // Each sequence contains exactly one actual TIS
         let positive_count = sequences.len();
         let negative_count = label_score_pairs.len() as i32 - positive_count as i32;
         if positive_count == 0 || negative_count <= 0 {
             return Err("Positive and negative count must be greater than 0.");
         }
+        // sort the label, score pairs by score descending
         label_score_pairs
             .sort_by(|(_, score_fst), (_, score_snd)| score_snd.partial_cmp(score_fst).unwrap());
         let mut false_positive = 0;
@@ -271,6 +305,8 @@ impl PWM {
         let mut score_prev = f64::NEG_INFINITY;
         let mut roc_points = Vec::new();
         for (label, score) in label_score_pairs {
+            // only push a new curve point if the score is different than the last one
+            // this prevents unjustified curves and will result in a diagonal
             if score != score_prev {
                 roc_points.push((
                     false_positive as f64 / negative_count as f64,
@@ -292,6 +328,8 @@ impl PWM {
     }
 }
 
+/// Calculates the are under curve (AUC) for a Vector of ROC points.  
+/// The tuples are (x_val, y_val).
 pub fn calc_auc(roc_points: &Vec<(f64, f64)>) -> f64 {
     roc_points
         .into_iter()
@@ -301,6 +339,8 @@ pub fn calc_auc(roc_points: &Vec<(f64, f64)>) -> f64 {
         })
 }
 
+/// Calculates the AUC for a range of pseudocounts and outpouts a vector of
+/// (pseudocount, AUC) values.
 pub fn eval_auc_for_pseudocount(
     sequences_train: &Vec<Sequence>,
     sequences_test: &Vec<Sequence>,
@@ -330,6 +370,8 @@ pub fn eval_auc_for_pseudocount(
     Ok(count_auc_points)
 }
 
+/// Estimates the background model of the different bases for false
+/// TIS candidates in the given sequences.
 pub fn calc_background_model(
     sequences: &Vec<Sequence>,
     tis_position: usize,
@@ -353,6 +395,9 @@ pub fn calc_background_model(
     bg_model
 }
 
+/// Given a PWM, sequences and a tis_position calculate the threshold needed
+/// to achieve the specified sensitivity.  
+/// Returns the needed threshold and an Evaluation object.
 pub fn calc_score_threshold_for_sensitivity(
     pwm: PWM,
     sequences: &Vec<Sequence>,
@@ -386,12 +431,14 @@ pub fn calc_score_threshold_for_sensitivity(
     (threshold, eval)
 }
 
+/// Count the number of the different startcodon variants in the given sequences.
 pub fn count_startcodon_variants(sequences: &Vec<Sequence>) -> HashMap<Startcodon, u32> {
     sequences.iter().fold(HashMap::new(), |map, seq| {
         seq.count_startcodon_variants(map)
     })
 }
 
+/// Area of a trapezoid.
 fn trapezoid_area(base1: f64, base2: f64, height: f64) -> f64 {
     height * (base1 + base2) / 2.
 }

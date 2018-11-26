@@ -176,6 +176,7 @@ fn main() {
         )
         .get_matches();
 
+    // match each subcommand to it's respective function
     let execution_result = match matches.subcommand() {
         ("count_startcodons", Some(matches)) => exec_count_startcodons(matches),
         ("calc_pwm", Some(matches)) => exec_calc_pwm(matches),
@@ -190,6 +191,9 @@ fn main() {
         print_and_exit(err);
     }
 }
+
+// The following functions are merely using functionality provided
+// by the util and analysis modules. 
 
 fn exec_count_startcodons(matches: &ArgMatches) -> Result<(), Box<Error>> {
     let input = matches.value_of("INPUT").unwrap();
