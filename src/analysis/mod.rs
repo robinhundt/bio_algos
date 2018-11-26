@@ -1,3 +1,5 @@
+//! This module contains contains methods and a position weight matrix
+//! implementation useful for detecting translataion initiation sites
 extern crate ndarray;
 use ndarray::{Array2, Zip};
 
@@ -7,38 +9,74 @@ extern crate serde_derive;
 use serde_derive::{Deserialize, Serialize};
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::f64;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 use std::ops::{Add, AddAssign};
 use std::path::Path;
+use std::fmt;
 
 use super::{Base, Sequence, SequenceExt, Startcodon};
 
+/// Holds the results of evaluating a pwm with threshold on sequences.
 #[derive(Default, Debug)]
 pub struct Evaluation {
     false_positive: usize,
     true_positive: usize,
+    negative_count: usize,
+    positive_count: usize
 }
 
+impl Evaluation {
+    pub fn tpr(&self) -> f64 {
+        self.true_positive as f64 / self.positive_count as f64
+    }
+
+    pub fn fpr(&self) -> f64 {
+        self.false_positive as f64 / self.negative_count as f64
+    }
+}
+
+impl fmt::Display for Evaluation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,"FP: {}, TP: {}, FPR: {}, TPR: {}", self.false_positive, self.true_positive, self.fpr(), self.tpr())
+    }
+}
+
+/// Implement addition on Evalution.
 impl Add for Evaluation {
     type Output = Evaluation;
 
     fn add(mut self, other: Evaluation) -> Evaluation {
         self.false_positive += other.false_positive;
         self.true_positive += other.true_positive;
+        self.negative_count += other.negative_count;
+        self.positive_count += other.negative_count;
         self
     }
 }
 
+/// Implement addition and assignment ( += ) on Evalutaion.
 impl AddAssign for Evaluation {
     fn add_assign(&mut self, other: Evaluation) {
         self.false_positive += other.false_positive;
         self.true_positive += other.true_positive;
+        self.negative_count += other.negative_count;
+        self.positive_count += other.negative_count;
     }
 }
 
+/// A PWM (position weight matrix) ca be used to identify possible
+/// translattion initiation (tis) sites. This is achieved by training
+/// the matrix on a set of training sequences which have been aligned
+/// such that their actual tis site is always at the same position in
+/// the sequence.  
+/// As hypterparamters, the length of the slice, the offset from the
+/// tis site, a pseudocount and a background distribution can be
+/// specified. The background model can also be estimated
+/// with the calc_auc() function of this module.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PWM {
     matrix: Array2<f64>,
@@ -78,6 +116,9 @@ impl PWM {
                 matrix[[*base as usize, idx]] += 1.;
             }
         }
+        // Every column of the matrix will contain number of sequences + 4 times
+        // the pseudocount elements. Thus we can divide the matrix elementwise
+        // by that number, in order to get a position probability
         matrix /= sequences.len() as f64 + 4. * pseudocount;
 
         for (row_index, row) in matrix.genrows_mut().into_iter().enumerate() {
@@ -183,10 +224,12 @@ impl PWM {
             .into_iter()
             .fold(Evaluation::default(), |mut eval, (label, score)| {
                 if label {
+                    eval.positive_count += 1;
                     if score >= threshold {
                         eval.true_positive += 1;
                     }
                 } else {
+                    eval.negative_count += 1;
                     if score >= threshold {
                         eval.false_positive += 1;
                     }
@@ -258,6 +301,35 @@ pub fn calc_auc(roc_points: &Vec<(f64, f64)>) -> f64 {
         })
 }
 
+pub fn eval_auc_for_pseudocount(
+    sequences_train: &Vec<Sequence>,
+    sequences_test: &Vec<Sequence>,
+    pseudocount_start: f64,
+    pseudocount_end: f64,
+    pseudocount_step: f64,
+    tis_position: usize,
+    pwm_offset: i32,
+    length: usize,
+    background_distribution: [f64; 4],
+) -> Result<Vec<(f64, f64)>, Box<Error>> {
+    let mut pseudocount = pseudocount_start;
+    let mut count_auc_points: Vec<(f64, f64)> = Vec::new();
+    while pseudocount <= pseudocount_end {
+        let pwm = PWM::new(
+            sequences_train,
+            tis_position,
+            pwm_offset,
+            length,
+            pseudocount,
+            background_distribution,
+        );
+        let roc = pwm.calc_roc(sequences_test, tis_position)?;
+        count_auc_points.push((pseudocount, calc_auc(&roc)));
+        pseudocount += pseudocount_step;
+    }
+    Ok(count_auc_points)
+}
+
 pub fn calc_background_model(
     sequences: &Vec<Sequence>,
     tis_position: usize,
@@ -286,13 +358,9 @@ pub fn calc_score_threshold_for_sensitivity(
     sequences: &Vec<Sequence>,
     tis_position: usize,
     sensitivity: f64,
-    max_iterations: usize,
-) -> (f64, f64, Evaluation) {
+) -> (f64, Evaluation) {
     if sensitivity <= 0. || sensitivity > 1. {
         panic!("Sensitivity must be within (0, 1] .")
-    }
-    if max_iterations == 0 {
-        panic!("max_iterations must be bigger than 0")
     }
 
     let mut label_score_pairs = pwm.score_label_sequences(sequences, tis_position);
@@ -300,7 +368,9 @@ pub fn calc_score_threshold_for_sensitivity(
         .sort_by(|(_, score_fst), (_, score_snd)| score_snd.partial_cmp(score_fst).unwrap());
     let mut eval = Evaluation::default();
     let mut threshold = 0.;
-    let mut achieved_sensitivity = 0.;
+    eval.positive_count = sequences.len();
+    eval.negative_count = label_score_pairs.len() - eval.positive_count;
+
     for (label, score) in label_score_pairs {
         threshold = score;
         if label {
@@ -308,12 +378,12 @@ pub fn calc_score_threshold_for_sensitivity(
         } else {
             eval.false_positive += 1;
         }
-        achieved_sensitivity = eval.true_positive as f64 / sequences.len() as f64;
-        if achieved_sensitivity >= sensitivity {
+        if eval.tpr() >= sensitivity {
             break;
         }
     }
-    (threshold, achieved_sensitivity, eval)
+
+    (threshold, eval)
 }
 
 pub fn count_startcodon_variants(sequences: &Vec<Sequence>) -> HashMap<Startcodon, u32> {

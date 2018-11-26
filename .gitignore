@@ -2,5 +2,6 @@
 **/*.rs.bk
 
 # ignore pwm files
+*.ac
 *.pwm
 *.roc
