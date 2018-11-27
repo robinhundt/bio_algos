@@ -74,7 +74,7 @@ fn main() {
         .value_name("PATH");
 
     let matches = App::new("Bio-Algorithms")
-        .version("0.1.0")
+        .version("1.0.0")
         .author("Robin William Hundt")
         .about(
             "A program implementing algorithms and datastructures mostly related to finding TIS",
