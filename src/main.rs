@@ -67,9 +67,9 @@ fn main() {
         .long("background")
         .value_names(&["A", "C", "G", "T"]);
 
-    let pwm_arg = Arg::with_name("PWM")
+    let pwm_arg = Arg::with_name("pwm")
         .help("Position weight matrix for given sequence data")
-        .long("PWM")
+        .long("pwm")
         .takes_value(true)
         .value_name("PATH");
 
@@ -85,7 +85,7 @@ fn main() {
                 .arg(input_arg.clone()),
         )
         .subcommand(
-            SubCommand::with_name("calc_PWM")
+            SubCommand::with_name("calc_pwm")
                 .about("Calculates a position weight matrix for the input")
                 .arg(input_arg.clone())
                 .arg(output_arg.clone())
@@ -180,7 +180,7 @@ fn main() {
     // match each subcommand to it's respective function
     let execution_result = match matches.subcommand() {
         ("count_startcodons", Some(matches)) => exec_count_startcodons(matches),
-        ("calc_PWM", Some(matches)) => exec_calc_pwm(matches),
+        ("calc_pwm", Some(matches)) => exec_calc_pwm(matches),
         ("calc_threshold", Some(matches)) => exec_calc_threshold(matches),
         ("calc_roc", Some(matches)) => exec_calc_roc(matches),
         ("eval_sequences", Some(matches)) => exec_eval_sequences(matches),
@@ -262,7 +262,7 @@ fn exec_calc_roc<'a>(matches: &'a ArgMatches) -> Result<(), Box<Error>> {
     let input = matches.value_of("INPUT").unwrap();
     let sequences = util::read_sequences_or_exit(input);
     let tis_position = 100;
-    let pwm_path = matches.value_of("PWM").unwrap();
+    let pwm_path = matches.value_of("pwm").unwrap();
     let pwm = PWM::load(pwm_path)?;
     let roc = pwm.calc_roc(&sequences, tis_position)?;
     match matches.value_of("output") {
@@ -285,7 +285,7 @@ fn exec_eval_sequences<'a>(matches: &'a ArgMatches) -> Result<(), Box<Error>> {
     let input = matches.value_of("INPUT").unwrap();
     let sequences = util::read_sequences_or_exit(input);
     let threshold: f64 = matches.value_of("threshold").unwrap().parse()?;
-    let pwm_path = matches.value_of("PWM").unwrap();
+    let pwm_path = matches.value_of("pwm").unwrap();
     let pwm = PWM::load(pwm_path)?;
     println!(
         "{}",
