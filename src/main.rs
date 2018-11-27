@@ -20,28 +20,28 @@ fn main() {
         .help("Input sequence data")
         .required(true);
     let output_arg = Arg::with_name("output")
-        .help("Where to store the pwm")
+        .help("Where to store the output")
         .short("o")
         .long("output")
         .takes_value(true)
         .value_name("PATH");
 
     let tis_position_arg = Arg::with_name("tis_position")
-        .help("Position of the aligned translation initiation site")
+        .help("Position of the aligned TIS")
         .long("tis")
         .takes_value(true)
         .value_name("POS")
         .default_value("100");
 
     let pseudocount_arg = Arg::with_name("pseudocount")
-        .help("Pseudocount to use for the pwm")
+        .help("Pseudocount to use for the PWM")
         .long("pseudocount")
         .takes_value(true)
         .default_value("1.0")
         .value_name("COUNT");
 
     let length_arg = Arg::with_name("length")
-        .help("Length of the pwm")
+        .help("Length of the PWM")
         .long("length")
         .short("L")
         .takes_value(true)
@@ -50,7 +50,7 @@ fn main() {
 
     let offset_arg = Arg::with_name("offset")
         .help(
-            "Offset of the pwm window. A positive value will move the pwm \
+            "Offset of the PWM window. A positive value will move the PWM \
              to the right, over the tis site, a negative value in the other direction",
         )
         .next_line_help(true)
@@ -61,30 +61,31 @@ fn main() {
 
     let background_model_arg = Arg::with_name("background_model")
         .help(
-            "Specify a background model to use for the pwm \
+            "Specify a background model to use for the PWM \
              [default: estimate background distribution of wrong sites]",
         )
         .long("background")
         .value_names(&["A", "C", "G", "T"]);
 
-    let pwm_arg = Arg::with_name("pwm")
+    let pwm_arg = Arg::with_name("PWM")
         .help("Position weight matrix for given sequence data")
-        .long("pwm")
+        .long("PWM")
         .takes_value(true)
         .value_name("PATH");
 
-    // TODO refactor this to use global
     let matches = App::new("Bio-Algorithms")
         .version("0.1.0")
         .author("Robin William Hundt")
-        .about("A program implementing some bio algorithmic stuff.")
+        .about(
+            "A program implementing algorithms and datastructures mostly related to finding TIS",
+        )
         .subcommand(
             SubCommand::with_name("count_startcodons")
                 .about("Counts all possible startcodon variants in the input")
                 .arg(input_arg.clone()),
         )
         .subcommand(
-            SubCommand::with_name("calc_pwm")
+            SubCommand::with_name("calc_PWM")
                 .about("Calculates a position weight matrix for the input")
                 .arg(input_arg.clone())
                 .arg(output_arg.clone())
@@ -96,7 +97,7 @@ fn main() {
         )
         .subcommand(
             SubCommand::with_name("calc_threshold")
-                .about("Calculates a score threshold give a sensitivity and an optional pwm matrix")
+                .about("Calculates a score threshold given a sensitivity and an optional PWM")
                 .arg(input_arg.clone())
                 .arg(pwm_arg.clone())
                 .arg(tis_position_arg.clone())
@@ -104,18 +105,18 @@ fn main() {
                     Arg::with_name("sensitivity")
                         .default_value("0.50")
                         .long("sensitivity")
-                        .help("Sensitivity to achieve with threshold."),
+                        .help("Sensitivity to achieve with threshold"),
                 ),
         )
         .subcommand(
             SubCommand::with_name("calc_roc")
-                .about("Calculates a ROC curve given the inout sequences and the pwm matrix")
+                .about("Calculates a ROC curve given the inoput sequences and the PWM")
                 .arg(input_arg.clone())
                 .arg(pwm_arg.clone())
                 .arg(output_arg.clone())
                 .arg(
                     Arg::with_name("auc")
-                        .help("Output the AUC for the curce")
+                        .help("Output the AUC for the curve")
                         .long("auc"),
                 ),
         )
@@ -123,7 +124,7 @@ fn main() {
             SubCommand::with_name("eval_sequences")
                 .arg(input_arg.clone())
                 .arg(pwm_arg.clone())
-                .about("Evaluates the input sequences given the provided pwm and a threshold")
+                .about("Evaluates the input sequences given the provided PWM and a threshold")
                 .arg(
                     Arg::with_name("threshold")
                         .help("Threshold to use for evalutaion")
@@ -135,8 +136,8 @@ fn main() {
         .subcommand(
             SubCommand::with_name("pseudocount_auc_data")
                 .about(
-                    "This command will evaluate a range of pseudocount \
-                     and output the AUC of resultig rocs",
+                    "This command will evaluate a range of pseudocounts \
+                     and output the AUC of resultig ROC curves",
                 )
                 .arg(output_arg.clone())
                 .arg(tis_position_arg.clone())
@@ -151,7 +152,7 @@ fn main() {
                 .arg(Arg::with_name("INPUT_TEST").help("Testing input sequence data"))
                 .arg(
                     Arg::with_name("pseudocount_start")
-                        .help("Pseudocount startvalue to use in the evaluation")
+                        .help("Pseudocount start value to use in the evaluation")
                         .long("count_start")
                         .takes_value(true)
                         .default_value("1.0")
@@ -159,7 +160,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("pseudocount_end")
-                        .help("Pseudocount to use for the pwm")
+                        .help("Pseudocount end value to use in the evaluation")
                         .long("count_end")
                         .takes_value(true)
                         .default_value("500")
@@ -167,7 +168,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("pseudocount_step")
-                        .help("Pseudocount step size to use.")
+                        .help("Pseudocount step size to use")
                         .long("count_step")
                         .takes_value(true)
                         .default_value("1.0")
@@ -179,7 +180,7 @@ fn main() {
     // match each subcommand to it's respective function
     let execution_result = match matches.subcommand() {
         ("count_startcodons", Some(matches)) => exec_count_startcodons(matches),
-        ("calc_pwm", Some(matches)) => exec_calc_pwm(matches),
+        ("calc_PWM", Some(matches)) => exec_calc_pwm(matches),
         ("calc_threshold", Some(matches)) => exec_calc_threshold(matches),
         ("calc_roc", Some(matches)) => exec_calc_roc(matches),
         ("eval_sequences", Some(matches)) => exec_eval_sequences(matches),
@@ -193,7 +194,7 @@ fn main() {
 }
 
 // The following functions are merely using functionality provided
-// by the util and analysis modules. 
+// by the util and analysis modules.
 
 fn exec_count_startcodons(matches: &ArgMatches) -> Result<(), Box<Error>> {
     let input = matches.value_of("INPUT").unwrap();
@@ -229,7 +230,7 @@ fn exec_calc_pwm(matches: &ArgMatches) -> Result<(), Box<Error>> {
     if let Some(path) = matches.value_of("output") {
         match pwm.store(path) {
             Err(msg) => eprintln!("{}", msg),
-            _ => println!("Stored pwm at: {}", path),
+            _ => println!("Stored PWM at: {}", path),
         };
     } else {
         println!("{:?}", pwm)
@@ -240,7 +241,7 @@ fn exec_calc_pwm(matches: &ArgMatches) -> Result<(), Box<Error>> {
 fn exec_calc_threshold(matches: &ArgMatches) -> Result<(), Box<Error>> {
     let input = matches.value_of("INPUT").unwrap();
     let sequences = util::read_sequences_or_exit(input);
-    let pwm = match matches.value_of("pwm") {
+    let pwm = match matches.value_of("PWM") {
         Some(path) => PWM::load(path)?,
         None => PWM::new(&sequences, 100, 0, 30, 1., [0.25, 0.25, 0.25, 0.25]),
     };
@@ -250,7 +251,8 @@ fn exec_calc_threshold(matches: &ArgMatches) -> Result<(), Box<Error>> {
         analysis::calc_score_threshold_for_sensitivity(pwm, &sequences, tis_position, sensitivity);
     println!(
         "Acvieved sensitivity of {} with threshold: {}",
-        eval.tpr(), threshold
+        eval.tpr(),
+        threshold
     );
     println!("{}", eval);
     Ok(())
@@ -260,7 +262,7 @@ fn exec_calc_roc<'a>(matches: &'a ArgMatches) -> Result<(), Box<Error>> {
     let input = matches.value_of("INPUT").unwrap();
     let sequences = util::read_sequences_or_exit(input);
     let tis_position = 100;
-    let pwm_path = matches.value_of("pwm").unwrap();
+    let pwm_path = matches.value_of("PWM").unwrap();
     let pwm = PWM::load(pwm_path)?;
     let roc = pwm.calc_roc(&sequences, tis_position)?;
     match matches.value_of("output") {
@@ -283,7 +285,7 @@ fn exec_eval_sequences<'a>(matches: &'a ArgMatches) -> Result<(), Box<Error>> {
     let input = matches.value_of("INPUT").unwrap();
     let sequences = util::read_sequences_or_exit(input);
     let threshold: f64 = matches.value_of("threshold").unwrap().parse()?;
-    let pwm_path = matches.value_of("pwm").unwrap();
+    let pwm_path = matches.value_of("PWM").unwrap();
     let pwm = PWM::load(pwm_path)?;
     println!(
         "{}",
