@@ -38,6 +38,11 @@ The documentation can be built and opened by entering
 cargo doc --no-deps --open
 ```
 
+The few tests specified in the analysis module can be run by entering:
+```
+cargo test
+```
+
 ### Protocol
 The current version of the assignment can, including compiled binary and execute + to html converted notebook can be found [here](https://gitlab.gwdg.de/robinwilliam.hundt/bio_algos/-/jobs/artifacts/master/file/hundt_robin.tar.gz?job=build_assignment).  
 The html version of the protocol will be under `pwm-assignment/protocol.html`.

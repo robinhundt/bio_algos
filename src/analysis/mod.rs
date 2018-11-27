@@ -157,7 +157,7 @@ impl PWM {
         Ok(())
     }
 
-    /// Loads a json serialized PWM from the specified path. 
+    /// Loads a json serialized PWM from the specified path.
     pub fn load(path: &str) -> Result<Self, &str> {
         let file = match File::open(path) {
             Err(_) => return Err("Error reading pwm file"),
@@ -186,8 +186,8 @@ impl PWM {
     }
 
     /// Returns a Vector of tuples where the first element designates
-    /// the true label of a potential TIS and the second element the 
-    /// score of this site. 
+    /// the true label of a potential TIS and the second element the
+    /// score of this site.
     pub fn score_label_sequence(
         &self,
         sequence: &Sequence,
@@ -219,8 +219,8 @@ impl PWM {
     }
 
     /// Returns a Vector of tuples where the first element designates
-    /// the true label of a potential TIS and the second element the 
-    /// score of this site. 
+    /// the true label of a potential TIS and the second element the
+    /// score of this site.
     pub fn score_label_sequences(
         &self,
         sequences: &Vec<Sequence>,
@@ -281,7 +281,7 @@ impl PWM {
     /// This is method is used to calculate the points for a receiver operator curve (ROC).
     /// The Vector contained in the Result holds tuples where the first element is the
     /// x and the second element the z value of the respecive ROC point.
-    /// 
+    ///
     /// Algorithm adapted from http://www.cs.ru.nl/~tomh/onderwijs/dm/dm_files/ROC101.pdf .
     pub fn calc_roc(
         &self,
@@ -447,6 +447,7 @@ fn trapezoid_area(base1: f64, base2: f64, height: f64) -> f64 {
 mod tests {
     use self::Base::*;
     use super::*;
+    use ndarray::arr2;
     #[test]
     fn auc_calculates_zero() {
         let roc = vec![(0., 0.), (1., 0.), (1., 1.)];
@@ -488,5 +489,26 @@ mod tests {
         ];
         let bg_model = calc_background_model(&seqs, 9, 4);
         assert_eq!(bg_model, [0.25; 4]);
+    }
+
+    #[test]
+    fn calc_pwm() {
+        let seqs = vec![
+            vec![A, C, G, T, A, T, G, A, A, G, T, G],
+            vec![A, C, G, T, A, T, G, A, A, G, T, G],
+        ];
+
+        let pfm = arr2(&[
+            [1., 1., 1., 3.],
+            [3., 1., 1., 1.],
+            [1., 3., 1., 1.],
+            [1., 1., 3., 1.]
+        ]);
+
+        let ppm = pfm / 6.;
+        let pwm_expected = ppm.map(|el: &f64| el.log2() - f64::log2(0.25));
+
+        let pwm = PWM::new(&seqs, 4, 1, 4, 1.0, [0.25, 0.25, 0.25, 0.25]);
+        assert_eq!(pwm.matrix, pwm_expected);
     }
 }
